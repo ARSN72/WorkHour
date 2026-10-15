@@ -1,0 +1,11 @@
+{
+  "name": "Work Hour Calculator",
+  "short_name": "Work Hour",
+  "description": "A local-first work time calculator.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f3f5f9",
+  "theme_color": "#111827",
+  "icons": []
+}

@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1220">
+  <meta name="description" content="A private, local-first work time calculator with shift countdown, breaks, overtime, and daily history.">
+  <title>Work Hour Calculator</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="css/style.css?v=10">
+</head>
+<body class="dark">
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Work Hour Calculator home">
+        <span class="brand-mark">W</span>
+        <span><strong>Work Hour Calculator</strong><small>Work time tracker</small></span>
+      </a>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="clock-card">
+          <span class="muted-label">Current local time</span>
+          <div id="liveClock" class="digital-clock" aria-label="Current local time" aria-live="off">--:--:--</div>
+          <div id="liveDate" class="clock-date">Loading date…</div>
+        </div>
+      </section>
+
+      <section class="dashboard-grid" aria-label="Workday summary">
+        <article class="metric-card panel">
+          <div class="metric-heading"><span class="metric-icon blue">◷</span><span>Net work elapsed</span></div>
+          <div id="elapsedValue" class="metric-value">00:00:00</div>
+          <div id="elapsedHint" class="metric-hint">Enter your start time to begin</div>
+        </article>
+        <article class="metric-card panel">
+          <div class="metric-heading"><span class="metric-icon purple">⌛</span><span>Time remaining</span></div>
+          <div id="remainingValue" class="metric-value">08:00:00</div>
+          <div id="remainingHint" class="metric-hint">Until your work target is reached</div>
+        </article>
+        <article class="metric-card panel">
+          <div class="metric-heading"><span class="metric-icon green">↗</span><span>Estimated exit</span></div>
+          <div id="exitValue" class="metric-value">—</div>
+          <div id="exitHint" class="metric-hint">Based on current settings</div>
+          <div id="overtimeHint" class="metric-hint">Overtime: 00:00:00</div>
+        </article>
+        <article class="metric-card panel">
+          <div class="metric-heading"><span class="metric-icon orange">◔</span><span>Break taken</span></div>
+          <div id="breakTakenValue" class="metric-value">00:00</div>
+          <div id="breakTakenHint" class="metric-hint">Total break time recorded</div>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <div class="main-column">
+          <article class="panel section-panel">
+            <div class="section-heading">
+              <div><span class="section-kicker">TODAY'S SESSION</span><h2>Shift setup</h2></div>
+              <span id="sessionStatus" class="status-pill status-idle">Not started</span>
+            </div>
+            <div class="form-grid">
+              <label class="field"><span>Work date</span><input id="workDate" type="date"></label>
+              <label class="field"><span>Start time</span><input id="startTime" type="time" value="09:00" step="60"></label>
+              <label class="field"><span>End time <small>(optional)</small></span><input id="endTime" type="time" step="60"></label>
+              <label class="field"><span>Required work</span>
+                <select id="targetHours">
+                  <option value="8">8 hours</option><option value="9">9 hours</option>
+                  <option value="7.5">7 hours 30 minutes</option><option value="custom">Custom duration</option>
+                </select>
+              </label>
+              <div id="customTargetWrap" class="field custom-target hidden">
+                <span>Custom target</span>
+                <div class="inline-inputs"><input id="customHours" type="number" min="0" max="24" value="8" aria-label="Custom target hours"><span>h</span><input id="customMinutes" type="number" min="0" max="59" value="0" aria-label="Custom target minutes"><span>m</span></div>
+              </div>
+              <label class="field"><span>Half-day mode</span>
+                <select id="halfDay">
+                  <option value="full">Full day</option><option value="first">First half</option><option value="second">Second half</option>
+                </select>
+              </label>
+            </div>
+            <div class="progress-block">
+              <div class="progress-label"><span>Shift completion</span><strong id="progressPercent">0%</strong></div>
+              <div class="progress-track" role="progressbar" aria-label="Shift completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBar"><div id="progressFill"></div></div>
+              <div class="progress-foot"><span id="progressStart">Start —</span><span id="progressEnd">Target —</span></div>
+            </div>
+            <div class="button-row">
+              <button id="startNowBtn" class="button button-primary" type="button">Use current time as start</button>
+              <button id="endNowBtn" class="button button-secondary" type="button">Set end to now</button>
+              <button id="clearEndBtn" class="button button-ghost" type="button">Clear end time</button>
+            </div>
+            <p class="help-text">The start time can be entered manually. An end time turns the session into a completed record; clear it to return to live calculations.</p>
+          </article>
+
+          <article class="panel section-panel">
+            <div class="section-heading">
+              <div><span class="section-kicker">BREAK MANAGEMENT</span><h2>Breaks</h2></div>
+              <div class="break-total"><span class="muted-label">Total taken</span><strong id="breakTotal">00:00</strong></div>
+            </div>
+            <div class="break-presets" aria-label="Add a break">
+              <button class="preset-button" data-break="10" type="button">+ 10 min</button>
+              <button class="preset-button" data-break="20" type="button">+ 20 min</button>
+              <button class="preset-button" data-break="30" type="button">+ 30 min</button>
+              <button class="preset-button" data-break="60" type="button">+ 60 min</button>
+            </div>
+            <form id="customBreakForm" class="custom-break-form">
+              <label class="field"><span>Custom break (minutes)</span><input id="customBreakMinutes" type="number" min="1" max="1440" placeholder="e.g. 15" required></label>
+              <button class="button button-secondary" type="submit">Add custom break</button>
+            </form>
+            <div id="breakList" class="break-list"><p class="empty-state">No breaks added yet.</p></div>
+            <p class="help-text">Breaks are excluded from required work time by default. Add the total time taken, including multiple breaks.</p>
+          </article>
+
+        </div>
+
+        <aside class="side-column">
+          <article class="panel section-panel day-card">
+            <div class="section-heading"><div><span class="section-kicker">QUICK ANSWER</span><h2>If I leave now</h2></div><span class="metric-icon blue">↗</span></div>
+            <div class="leave-now-card">
+              <div><span class="muted-label">Net work if you stop now</span><strong id="leaveNowWorked">00:00:00</strong></div>
+              <div><span class="muted-label">Shortfall / extra time</span><strong id="leaveNowDelta">8h 00m short</strong></div>
+              <p id="leaveNowMessage">Enter your start time to calculate your result.</p>
+            </div>
+            <div class="notice notice-space"><strong>Daily record tools</strong><p>Each date is saved separately. Save, start a new day, or reset the current day from here.</p></div>
+            <a class="button button-secondary button-full external-action-link" href="https://walkover.keka.com/#/me/attendance/logs" target="_blank" rel="noopener noreferrer">Open Keka attendance</a>
+            <p class="help-text">Clock-out must be confirmed on Keka; this page cannot control another website.</p>
+            <button id="saveDayBtn" class="button button-primary button-full" type="button">Save today's record</button>
+            <button id="newDayBtn" class="button button-secondary button-full" type="button">Start a new day</button>
+            <button id="resetDayBtn" class="button button-ghost button-full" type="button">Reset this day's inputs</button>
+          </article>
+
+          <article class="panel section-panel">
+            <div class="section-heading"><div><span class="section-kicker">YOUR HISTORY</span><h2>Recent days</h2></div><button id="exportBtn" class="text-button" type="button">Export CSV</button></div>
+            <div id="historySummary" class="history-summary">No saved days yet.</div>
+            <div id="historyList" class="history-list"><p class="empty-state">Your saved daily records will appear here.</p></div>
+            <p class="help-text">Saved locally in this browser. Export a CSV backup if you want to keep a copy.</p>
+          </article>
+
+          <article class="panel section-panel settings-card">
+            <div class="section-heading"><div><span class="section-kicker">PREFERENCES</span><h2>Settings</h2></div><span class="metric-icon purple">⚙</span></div>
+            <label class="check-field"><input id="includeBreaks" type="checkbox"><span>Count breaks toward work target</span></label>
+            <label class="check-field"><input id="confirmReset" type="checkbox" checked><span>Confirm before resetting a day</span></label>
+            <p class="help-text">When break time counts toward the target, it does not extend the estimated leaving time.</p>
+          </article>
+        </aside>
+      </section>
+      <footer class="site-footer">
+        <div class="footer-credit">
+          <span class="footer-mark">Crafted with ❤️ by AR$N</span>
+          <div class="social-links" aria-label="Developer social links">
+          <a href="https://github.com/arsn72" target="_blank" rel="noopener noreferrer" aria-label="GitHub profile">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5A12 12 0 0 0 8.2 23.7c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.8 1.2 1.8 1.2 1.1 1.9 2.9 1.3 3.6 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.3 11.3 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.6.2 2.8.1 3.1.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.5-5.4 5.8.4.3.8 1 .8 2.1v3.1c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z"/></svg>
+          </a>
+          <a href="https://www.linkedin.com/in/arshanmansuri" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.9 8.6A1.9 1.9 0 1 1 6.9 4.8a1.9 1.9 0 0 1 0 3.8ZM5.1 9.9h3.6v9.6H5.1V9.9Zm5.8 0h3.5v1.3h.1c.5-.9 1.7-1.9 3.5-1.9 3.7 0 4.4 2.4 4.4 5.5v5.7h-3.6v-5.3c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.4H10.9V9.9Z"/></svg>
+          </a>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="js/main.js?v=10"></script>
+</body>
+</html>
