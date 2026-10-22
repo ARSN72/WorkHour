@@ -1,0 +1,32 @@
+{
+  "name": "work-hour-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A desktop tray widget and work hour calculator",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^35.1.5",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.arsn.workhourcalculator",
+    "productName": "Work Hour Calculator",
+    "files": [
+      "index.html",
+      "css/**/*",
+      "js/**/*",
+      "manifest.json",
+      "sw.js",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "desktop/app.ico"
+    }
+  }
+}

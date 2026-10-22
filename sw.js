@@ -1,9 +1,9 @@
-const CACHE_NAME = "shiftmate-static-v10";
+const CACHE_NAME = "shiftmate-static-v11";
 const ASSETS = [
   "./",
   "./index.html",
-  "./css/style.css?v=10",
-  "./js/main.js?v=10",
+  "./css/style.css?v=11",
+  "./js/main.js?v=11",
   "./js/modules/date-time.js",
   "./js/modules/storage.js",
   "./js/modules/calculator.js",

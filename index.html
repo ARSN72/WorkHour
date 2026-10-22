@@ -7,7 +7,7 @@
   <meta name="description" content="A private, local-first work time calculator with shift countdown, breaks, overtime, and daily history.">
   <title>Work Hour Calculator</title>
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="css/style.css?v=10">
+  <link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body class="dark">
   <div class="app-shell">
@@ -139,6 +139,7 @@
             <div class="section-heading"><div><span class="section-kicker">PREFERENCES</span><h2>Settings</h2></div><span class="metric-icon purple">⚙</span></div>
             <label class="check-field"><input id="includeBreaks" type="checkbox"><span>Count breaks toward work target</span></label>
             <label class="check-field"><input id="confirmReset" type="checkbox" checked><span>Confirm before resetting a day</span></label>
+            <label id="desktopWidgetEnabledWrap" class="check-field hidden"><input id="desktopWidgetEnabled" type="checkbox"><span>Enable desktop widget and scheduled summaries</span></label>
             <p class="help-text">When break time counts toward the target, it does not extend the estimated leaving time.</p>
           </article>
         </aside>
@@ -159,6 +160,6 @@
     </main>
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="js/main.js?v=10"></script>
+  <script type="module" src="js/main.js?v=11"></script>
 </body>
 </html>

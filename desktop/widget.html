@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Work Hour Calculator Clock</title>
+  <link rel="stylesheet" href="/desktop/widget.css?v=2">
+</head>
+<body>
+  <main class="widget" aria-label="Desktop clock widget">
+    <header class="widget-header">
+      <span class="widget-title">WORK HOUR CALCULATOR</span>
+      <div class="widget-actions">
+        <button id="openCalculator" type="button" aria-label="Open calculator" title="Open calculator">↗</button>
+        <button id="hideWidget" type="button" aria-label="Hide widget" title="Hide widget">×</button>
+      </div>
+    </header>
+    <div id="liveClock" class="digital-clock" aria-label="Current local time" aria-live="off">--:--:--</div>
+    <div id="liveDate" class="clock-date"></div>
+    <section class="stats-grid" aria-label="Today's work summary">
+      <div class="stat"><span>Clock-in</span><strong id="clockInValue">—</strong></div>
+      <div class="stat"><span id="clockOutLabel">Clock-out</span><strong id="clockOutValue">—</strong></div>
+      <div class="stat"><span>Break taken</span><strong id="breakValue">0m</strong></div>
+      <div class="stat"><span>Net work</span><strong id="netWorkValue">—</strong></div>
+      <div class="stat stat-wide"><span>Since clock-in · includes breaks</span><strong id="elapsedValue">—</strong></div>
+    </section>
+    <section id="spotlight" class="spotlight" aria-live="polite" hidden>
+      <span id="spotlightTitle" class="spotlight-title"></span>
+      <strong id="spotlightValue" class="spotlight-value"></strong>
+      <span id="spotlightDetail" class="spotlight-detail"></span>
+    </section>
+  </main>
+  <script type="module" src="/desktop/widget.js?v=2"></script>
+</body>
+</html>

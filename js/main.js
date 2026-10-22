@@ -154,6 +154,26 @@ function bindEvents() {
     repository.updateSettings({ [id]: $(id).checked });
     renderAll();
   }));
+  const desktopWidgetToggle = $("desktopWidgetEnabled");
+  if (window.desktopWidget?.isDesktop) {
+    $("desktopWidgetEnabledWrap").classList.remove("hidden");
+    window.desktopWidget.getState().then(state => {
+      desktopWidgetToggle.checked = state.widgetEnabled;
+    }).catch(error => {
+      console.error("Could not read desktop widget settings:", error);
+      showToast("Could not load desktop widget settings.", true);
+    });
+    desktopWidgetToggle.addEventListener("change", async () => {
+      try {
+        const state = await window.desktopWidget.setEnabled(desktopWidgetToggle.checked);
+        desktopWidgetToggle.checked = state.widgetEnabled;
+      } catch (error) {
+        console.error("Could not update desktop widget setting:", error);
+        showToast("Could not update the desktop widget setting.", true);
+        desktopWidgetToggle.checked = !desktopWidgetToggle.checked;
+      }
+    });
+  }
 
   document.querySelectorAll("[data-break]").forEach(button => {
     button.addEventListener("click", () => addBreak(activeDay, Number(button.dataset.break), `${button.dataset.break}-minute break`, onDayChanged));
