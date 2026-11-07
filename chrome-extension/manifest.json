@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Work Hour Calculator",
+  "short_name": "Work Hour",
+  "version": "1.0.0",
+  "description": "A local-first work time calculator.",
+  "permissions": [
+    "storage"
+  ],
+  "optional_permissions": [
+    "scripting"
+  ],
+  "optional_host_permissions": [
+    "https://walkover.keka.com/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Work Hour Calculator",
+    "default_popup": "popup.html"
+  }
+}
