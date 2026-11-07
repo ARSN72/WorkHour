@@ -11,6 +11,7 @@
   <main class="popup">
     <header class="header">
       <div>
+        <img class="app-logo" src="icons/icon48.png" alt="">
         <h1>Work Hour Calculator</h1>
       </div>
       <time id="liveClock" aria-label="Current local time">--:--:--</time>
@@ -42,7 +43,7 @@
         </div>
         <p id="kekaStatus" class="help keka-status" role="status" aria-live="polite">Connect to Keka to fetch attendance automatically.</p>
         <button id="fetchKekaBtn" class="button secondary keka-button" type="button">Connect / refresh Keka</button>
-        <p class="help">Read-only Keka data. Estimates assume an 8-hour target and no breaks; use Custom for different settings.</p>
+        <p class="help">Read-only Keka data. The work target comes from Custom; elapsed work and breaks use Keka punch data when available.</p>
       </article>
     </section>
 
@@ -142,7 +143,7 @@
       <a class="website-link" href="https://ionxtech.com" target="_blank" rel="noopener noreferrer">ionXtech</a>
     </footer>
     <nav class="tab-navigation" role="tablist" aria-label="Calculator mode">
-      <button id="viewTab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="viewPanel" tabindex="0">View</button>
+      <button id="viewTab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="viewPanel" tabindex="0">Live</button>
       <button id="customTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="customPanel" tabindex="-1">Custom</button>
     </nav>
   </main>
