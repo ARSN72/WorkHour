@@ -25,6 +25,11 @@ function saveActive() {
   activeDay.customMinutes = clampInteger($("customMinutes").value, 0, 59, 0);
   activeDay.halfDay = $("halfDay").value;
   const saved = repository.saveDay(activeDay);
+  if (saved && activeDate === todayISO() && globalThis.chrome?.storage?.local) {
+    chrome.storage.local.set({
+      liveWorkPolicy: { date: activeDate, targetMinutes: targetMinutes(activeDay) }
+    }).catch(error => console.error("Could not save the live work policy for the toolbar badge:", error));
+  }
   showNotice(saved ? "" : "Could not save. Extension storage may be unavailable or full.");
   return saved;
 }

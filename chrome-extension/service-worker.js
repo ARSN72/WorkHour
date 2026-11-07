@@ -2,9 +2,103 @@ const KEKA_ORIGIN = "https://walkover.keka.com";
 const KEKA_ATTENDANCE_URL = `${KEKA_ORIGIN}/#/me/attendance/logs`;
 const KEKA_PERMISSION = { origins: [`${KEKA_ORIGIN}/*`] };
 const AUTO_FETCH_DELAY_MS = 1200;
-const autoFetchTimers = new Map();
-const extensionOpenedTabs = new Set();
+const BADGE_ALARM = "attendance-badge-toggle";
 const activeTabFetches = new Map();
+let showEstimatedExit = false;
+
+function badgeEstimate(record, policy) {
+  const [hours, minutes] = String(record.clockIn).split(":").map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  const targetMinutes = policy?.date === record.date && Number.isFinite(policy.targetMinutes)
+    ? Math.max(0, policy.targetMinutes)
+    : 480;
+  const breakMinutes = Number.isFinite(record.breakSeconds) ? record.breakSeconds / 60 : 0;
+  return hours * 60 + minutes + targetMinutes + breakMinutes;
+}
+
+function formatBadgeTime(totalMinutes) {
+  const minute = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(minute / 60)).padStart(2, "0")}${String(minute % 60).padStart(2, "0")}`;
+}
+
+function formatTitleTime(totalMinutes) {
+  const minute = ((Math.round(totalMinutes) % 1440) + 1440) % 1440;
+  const date = new Date();
+  date.setHours(Math.floor(minute / 60), minute % 60, 0, 0);
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+async function updateActionBadge(record, policy) {
+  if (record?.date !== localDateKey() || record.error || !record.clockIn
+    || typeof record.clockedIn !== "boolean") {
+    await chrome.alarms.clear(BADGE_ALARM);
+    await chrome.action.setBadgeText({ text: "" });
+    await chrome.action.setTitle({ title: "Work Hour Calculator" });
+    return;
+  }
+
+  if (record.clockedIn) {
+    const estimatedExit = badgeEstimate(record, policy);
+    showEstimatedExit = false;
+    await chrome.action.setBadgeBackgroundColor({ color: "#198754" });
+    await chrome.action.setBadgeText({ text: "IN" });
+    await chrome.action.setTitle({
+      title: estimatedExit === null
+        ? "Clocked in"
+        : `Clocked in · estimated exit ${formatTitleTime(estimatedExit)}`
+    });
+    if (estimatedExit === null) {
+      await chrome.alarms.clear(BADGE_ALARM);
+    } else {
+      await chrome.alarms.create(BADGE_ALARM, { periodInMinutes: 0.5 });
+    }
+    return;
+  }
+
+  await chrome.alarms.clear(BADGE_ALARM);
+  await chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+  await chrome.action.setBadgeText({ text: "OUT" });
+  await chrome.action.setTitle({ title: "Clocked out" });
+}
+
+async function refreshActionBadge() {
+  const { lastKekaClockInFetch, liveWorkPolicy } = await chrome.storage.local.get([
+    "lastKekaClockInFetch",
+    "liveWorkPolicy"
+  ]);
+  await updateActionBadge(lastKekaClockInFetch, liveWorkPolicy);
+}
+
+chrome.alarms.onAlarm.addListener(alarm => {
+  if (alarm.name !== BADGE_ALARM) return;
+  chrome.storage.local.get(["lastKekaClockInFetch", "liveWorkPolicy"]).then(async values => {
+    const record = values.lastKekaClockInFetch;
+    const estimate = record?.clockedIn ? badgeEstimate(record, values.liveWorkPolicy) : null;
+    if (record?.date !== localDateKey() || record.error || estimate === null) {
+      await updateActionBadge(record, values.liveWorkPolicy);
+      return;
+    }
+    showEstimatedExit = !showEstimatedExit;
+    await chrome.action.setBadgeText({
+      text: showEstimatedExit ? formatBadgeTime(estimate) : "IN"
+    });
+  }).catch(error => console.error("Could not update the attendance toolbar badge:", error));
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local" || (!changes.lastKekaClockInFetch && !changes.liveWorkPolicy)) return;
+  refreshActionBadge().catch(error => console.error("Could not refresh the attendance toolbar badge:", error));
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  refreshActionBadge().catch(error => console.error("Could not restore the attendance toolbar badge:", error));
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  refreshActionBadge().catch(error => console.error("Could not initialize the attendance toolbar badge:", error));
+});
+
+refreshActionBadge().catch(error => console.error("Could not initialize the attendance toolbar badge:", error));
 
 function withTimeout(promise, timeoutMs, message) {
   let timeout;
@@ -50,11 +144,10 @@ async function getAttendanceTab() {
   if (attendanceTab) return waitForTab(attendanceTab.id);
 
   const created = await chrome.tabs.create({ url: KEKA_ATTENDANCE_URL, active: false });
-  extensionOpenedTabs.add(created.id);
   return waitForTab(created.id);
 }
 
-async function fetchAttendanceFromTab(tabId, date) {
+async function fetchAttendanceFromTab(tabId, date, startupDelayMs = 0) {
   if (!await chrome.permissions.contains({ ...KEKA_PERMISSION, permissions: ["scripting"] })) {
     throw new Error("Allow access to walkover.keka.com to read your attendance.");
   }
@@ -64,9 +157,9 @@ async function fetchAttendanceFromTab(tabId, date) {
       target: { tabId },
       world: "MAIN",
       func: fetchKekaClockInFromPage,
-      args: [date]
+      args: [date, startupDelayMs]
     }), 22000, "Keka's attendance API took too long to respond. Refresh Keka and try again.");
-    if (result?.result?.clockIn) return result.result;
+    if (result?.result?.clockIn && typeof result.result.clockedIn === "boolean") return result.result;
     throw new Error(result?.result?.error || "Keka returned no clock-in for today.");
   })().finally(() => activeTabFetches.delete(tabId));
   activeTabFetches.set(tabId, fetchPromise);
@@ -84,45 +177,42 @@ function localDateKey() {
 }
 
 function scheduleAutomaticAttendanceFetch(tabId) {
-  clearTimeout(autoFetchTimers.get(tabId));
-  const timer = setTimeout(async () => {
-    autoFetchTimers.delete(tabId);
-    try {
-      const attendance = await fetchAttendanceFromTab(tabId, localDateKey());
-      await chrome.storage.local.set({
-        lastKekaClockInFetch: { ...attendance, date: localDateKey(), fetchedAt: Date.now(), error: "" }
-      });
-    } catch (error) {
-      const result = {
-        date: localDateKey(),
-        clockIn: "",
-        fetchedAt: Date.now(),
-        error: error instanceof Error ? error.message : "Could not read Keka attendance."
-      };
+  (async () => {
+    let lastError;
+    for (const delay of [AUTO_FETCH_DELAY_MS, 1500, 3000]) {
       try {
-        await chrome.storage.local.set({ lastKekaClockInFetch: result });
-      } catch (storageError) {
-        console.error("Could not save automatically fetched Keka attendance:", storageError);
+        const attendance = await fetchAttendanceFromTab(tabId, localDateKey(), delay);
+        await chrome.storage.local.set({
+          lastKekaClockInFetch: { ...attendance, date: localDateKey(), fetchedAt: Date.now(), error: "" }
+        });
+        return;
+      } catch (error) {
+        lastError = error;
       }
     }
-  }, AUTO_FETCH_DELAY_MS);
-  autoFetchTimers.set(tabId, timer);
+    const result = {
+      date: localDateKey(),
+      clockIn: "",
+      fetchedAt: Date.now(),
+      error: lastError instanceof Error ? lastError.message : "Could not read Keka attendance."
+    };
+    try {
+      await chrome.storage.local.set({ lastKekaClockInFetch: result });
+    } catch (storageError) {
+      console.error("Could not save automatically fetched Keka attendance:", storageError);
+    }
+  })().catch(error => console.error("Could not automatically refresh Keka attendance:", error));
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = tab.url || changeInfo.url || "";
   if (!url.startsWith(`${KEKA_ORIGIN}/`)) return;
-  if (extensionOpenedTabs.has(tabId)) {
-    if (changeInfo.status === "complete") extensionOpenedTabs.delete(tabId);
-    return;
+  if (changeInfo.status === "complete" || changeInfo.url && tab.status === "complete") {
+    scheduleAutomaticAttendanceFetch(tabId);
   }
-  if (changeInfo.status === "complete" || changeInfo.url) scheduleAutomaticAttendanceFetch(tabId);
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
-  clearTimeout(autoFetchTimers.get(tabId));
-  autoFetchTimers.delete(tabId);
-  extensionOpenedTabs.delete(tabId);
   activeTabFetches.delete(tabId);
 });
 
@@ -162,7 +252,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-async function fetchKekaClockInFromPage(dateKey) {
+async function fetchKekaClockInFromPage(dateKey, startupDelayMs = 0) {
+  if (startupDelayMs > 0) await new Promise(resolve => setTimeout(resolve, startupDelayMs));
   const endpoint = `${location.origin}/k/attendance/api/mytime/attendance/attendancedayrequests`;
   const jwtPattern = /(?:^|[\s"'])(?:Bearer\s+)?([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)(?:$|[\s"'])/i;
   const candidates = [];
@@ -273,7 +364,6 @@ async function fetchKekaClockInFromPage(dateKey) {
     return Number.isNaN(parsed.getTime()) ? "" : `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
   };
   const dateKeys = /^(date|day|attendancedate|punchdate|logdate|workdate|createddate|entrydate|localdate)$/i;
-  const timeKeys = /time|clock|punch|timestamp|createdon|checkin|checkout|entry/i;
   const directionKeys = /^(type|direction|status|punchstatus|originalpunchstatus|eventtype|attendanceevent|punchtype)$/i;
   const normalizeKey = key => String(key).replace(/[_\-\s]/g, "").toLowerCase();
   const arrayCandidates = [];
@@ -294,14 +384,15 @@ async function fetchKekaClockInFromPage(dateKey) {
 
   const collectEntry = entry => {
     const fields = [];
-    const search = (value, depth = 0) => {
+    const search = (value, owner = null, depth = 0) => {
       if (depth > 5 || value === null || value === undefined) return;
       if (Array.isArray(value)) {
-        for (const item of value) search(item, depth + 1);
+        for (const item of value) search(item, owner, depth + 1);
       } else if (typeof value === "object") {
         for (const [key, child] of Object.entries(value)) {
-          fields.push({ key: normalizeKey(key), value: child });
-          search(child, depth + 1);
+          const field = { key: normalizeKey(key), value: child, owner: value };
+          if (child === null || typeof child !== "object") fields.push(field);
+          search(child, value, depth + 1);
         }
       }
     };
@@ -309,34 +400,40 @@ async function fetchKekaClockInFromPage(dateKey) {
     const dateValues = fields.filter(field => dateKeys.test(field.key)).map(field => normalizeDate(field.value)).filter(Boolean);
     const dateMatches = dateValues.length === 0 || dateValues.includes(dateKey);
     if (!dateMatches) return null;
-    const directionValues = fields.filter(field => directionKeys.test(field.key))
-      .map(field => String(field.value).toLowerCase().replace(/[^a-z]/g, ""));
-    const explicitlyIn = directionValues.some(value => /^(in|clockin|punchin|checkin|firstin|entryin)$/.test(value));
-    const explicitlyOut = directionValues.some(value => /^(out|clockout|punchout|checkout|lastout|entryout|break)$/.test(value));
-    const timeFields = fields.filter(field => timeKeys.test(field.key));
+    const timeFields = fields.filter(field =>
+      /(clockin|punchin|checkin|firstin|entryin|intime|arrival|starttime|breakstart|clockout|punchout|checkout|exit|lastout|breakend|outtime|logout)/.test(field.key)
+      || /^(time|punch|timestamp|createdon|actualtime|entry)$/.test(field.key)
+    );
     const punches = [];
     for (const field of timeFields) {
-      const clockIn = toClock(field.value);
-      if (!clockIn) continue;
       const key = field.key;
-      const keySaysOut = /out|exit|breakend/.test(key);
-      const keySaysIn = /in|arrival|clockin/.test(key);
+      const time = toClock(field.value);
+      if (!time) continue;
+      const keySaysOut = /(clockout|punchout|checkout|exit|lastout|breakend|outtime|logout)/.test(key);
+      const keySaysIn = /(clockin|punchin|checkin|firstin|entryin|intime|arrival|starttime)/.test(key);
+      let explicitlyIn = keySaysIn;
+      let explicitlyOut = keySaysOut;
+      if (!explicitlyIn && !explicitlyOut && /^(time|punch|timestamp|createdon|actualtime|entry)$/.test(key)) {
+        const directionValues = Object.entries(field.owner || {})
+          .filter(([ownerKey]) => directionKeys.test(normalizeKey(ownerKey)))
+          .map(([, value]) => String(value).toLowerCase().replace(/[^a-z]/g, ""));
+        explicitlyIn = directionValues.some(value => /^(in|clockin|punchin|checkin|firstin|entryin)$/.test(value));
+        explicitlyOut = directionValues.some(value => /^(out|clockout|punchout|checkout|lastout|entryout|break)$/.test(value));
+      }
       punches.push({
-        clockIn,
-        explicitlyIn: keySaysIn || explicitlyIn && !explicitlyOut,
-        explicitlyOut: keySaysOut || explicitlyOut && !explicitlyIn
+        clockIn: time,
+        explicitlyIn,
+        explicitlyOut
       });
     }
-    return punches.length ? { clockIn: punches[0].clockIn, explicitlyIn, explicitlyOut, punches } : null;
+    return punches.length ? { punches } : null;
   };
 
   const entries = [];
   for (const candidate of arrayCandidates) {
     for (const item of candidate.items) {
       const parsed = collectEntry(item);
-      if (parsed && !entries.some(entry => entry.clockIn === parsed.clockIn
-        && entry.explicitlyIn === parsed.explicitlyIn
-        && entry.explicitlyOut === parsed.explicitlyOut)) {
+      if (parsed) {
         entries.push(parsed);
       }
     }
@@ -356,10 +453,6 @@ async function fetchKekaClockInFromPage(dateKey) {
       && other.explicitlyIn === punch.explicitlyIn
       && other.explicitlyOut === punch.explicitlyOut) === index
   );
-  const clockInPunch = uniquePunches.find(punch => punch.explicitlyIn && !punch.explicitlyOut)
-    || uniquePunches.find(punch => !punch.explicitlyOut);
-  if (!clockInPunch) return { error: "Keka responded, but no clock-in was present in today's attendance data." };
-
   const orderedPunches = [...uniquePunches].sort((a, b) => {
     const toMinutes = value => {
       const [hours, minutes] = value.split(":").map(Number);
@@ -373,9 +466,12 @@ async function fetchKekaClockInFromPage(dateKey) {
   let workedSeconds = 0;
   let breakSeconds = 0;
   let hasExplicitPunchTypes = false;
+  let clockedIn = false;
+  let firstClockIn = "";
   for (const punch of orderedPunches) {
     let type = punch.explicitlyIn ? "in" : punch.explicitlyOut ? "out" : nextType;
     if (punch.explicitlyIn || punch.explicitlyOut) hasExplicitPunchTypes = true;
+    if (type === "in" && !firstClockIn) firstClockIn = punch.clockIn;
     const [hours, minutes] = punch.clockIn.split(":").map(Number);
     const punchMinute = hours * 60 + minutes;
     if (type === "in") {
@@ -383,6 +479,7 @@ async function fetchKekaClockInFromPage(dateKey) {
       if (workStart === null) workStart = punchMinute;
       lastOut = null;
       nextType = "out";
+      clockedIn = true;
     } else {
       if (workStart !== null) {
         workedSeconds += Math.max(0, punchMinute - workStart) * 60;
@@ -390,18 +487,21 @@ async function fetchKekaClockInFromPage(dateKey) {
       }
       lastOut = punchMinute;
       nextType = "in";
+      clockedIn = false;
     }
   }
+  if (!firstClockIn) return { error: "Keka responded, but no clock-in was present in today's attendance data." };
   const now = new Date();
   const nowMinute = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
   if (workStart !== null) workedSeconds += Math.max(0, nowMinute - workStart) * 60;
   else if (lastOut !== null) breakSeconds += Math.max(0, nowMinute - lastOut) * 60;
 
   return {
-    clockIn: clockInPunch.clockIn,
+    clockIn: firstClockIn,
     workedSeconds: orderedPunches.length > 1 ? workedSeconds : undefined,
     breakSeconds: orderedPunches.length > 1 ? breakSeconds : undefined,
     punchCount: orderedPunches.length,
-    hasExplicitPunchTypes
+    hasExplicitPunchTypes,
+    clockedIn
   };
 }
