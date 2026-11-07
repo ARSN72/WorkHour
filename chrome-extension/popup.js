@@ -1,12 +1,13 @@
 import { todayISO, currentTimeInput, formatDuration, formatClock, parseTime } from "./js/modules/date-time.js";
 import { repository } from "./js/modules/storage.js";
-import { calculate, totalBreakMinutes } from "./js/modules/calculator.js";
+import { calculate, targetMinutes, totalBreakMinutes } from "./js/modules/calculator.js";
 
 const $ = id => document.getElementById(id);
 let activeDate = todayISO();
 let activeDay = null;
 let viewDate = todayISO();
 let kekaFetchResult = null;
+let kekaFetchPromise = null;
 let tickHandle;
 let activeMode = "view";
 
@@ -24,6 +25,11 @@ function saveActive() {
   activeDay.customMinutes = clampInteger($("customMinutes").value, 0, 59, 0);
   activeDay.halfDay = $("halfDay").value;
   const saved = repository.saveDay(activeDay);
+  if (saved && activeDate === todayISO() && globalThis.chrome?.storage?.local) {
+    chrome.storage.local.set({
+      liveWorkPolicy: { date: activeDate, targetMinutes: targetMinutes(activeDay) }
+    }).catch(error => console.error("Could not save the live work policy for the toolbar badge:", error));
+  }
   showNotice(saved ? "" : "Could not save. Extension storage may be unavailable or full.");
   return saved;
 }
@@ -137,22 +143,48 @@ function renderKekaView() {
     date: viewDate,
     startTime: record.clockIn,
     endTime: "",
-    target: 8,
-    halfDay: "full",
+    target: activeDay?.target || repository.settings().target || "8",
+    customHours: activeDay?.customHours ?? 8,
+    customMinutes: activeDay?.customMinutes ?? 0,
+    halfDay: activeDay?.halfDay || "full",
     breaks: []
   }, { includeBreaks: true });
 
   if (activeMode !== "view") return;
-  $("elapsedValue").textContent = formatDuration(result.netSec);
-  $("remainingValue").textContent = formatDuration(result.remainingSec);
-  $("exitValue").textContent = result.estimatedExitMin === null ? "—" : formatClock(result.estimatedExitMin, viewDate);
-  $("elapsedHint").textContent = result.rawElapsedSec > 0 ? "Since clock-in · no break deductions" : "Since clock-in";
-  $("remainingHint").textContent = result.remainingSec === 0 ? "8-hour target reached" : "Until an 8-hour target";
-  $("exitHint").textContent = "Excludes breaks";
+  const targetSec = targetMinutes(activeDay) * 60;
+  const workedSec = Number.isFinite(record.workedSeconds) ? record.workedSeconds : result.rawElapsedSec;
+  const remainingSec = Math.max(0, targetSec - workedSec);
+  const breakSec = Number.isFinite(record.breakSeconds) ? record.breakSeconds : null;
+  const estimatedExitMin = startMinute + targetSec / 60 + (breakSec || 0) / 60;
+  $("elapsedValue").textContent = formatDuration(workedSec);
+  $("remainingValue").textContent = formatDuration(remainingSec);
+  $("exitValue").textContent = formatClock(estimatedExitMin, viewDate);
+  $("elapsedHint").textContent = breakSec === null
+    ? "Since clock-in · break punches unavailable"
+    : `${formatDuration(breakSec, true)} break taken`;
+  $("remainingHint").textContent = "";
+  $("exitHint").textContent = breakSec === null
+    ? `${targetMinutes(activeDay) / 60}h target · breaks unavailable`
+    : `Includes ${formatDuration(breakSec, true)} break`;
 }
 
 function showKekaStatus(message) {
   $("kekaStatus").textContent = message;
+}
+
+function getExtensionApi() {
+  const api = globalThis.chrome;
+  return api?.storage?.local && api?.permissions && api?.runtime?.sendMessage ? api : null;
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timeout;
+  return Promise.race([
+    promise,
+    new Promise((resolve, reject) => {
+      timeout = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]).finally(() => window.clearTimeout(timeout));
 }
 
 function restoreKekaResult(result) {
@@ -163,11 +195,16 @@ function restoreKekaResult(result) {
 }
 
 async function restoreKekaFetch() {
+  const api = getExtensionApi();
+  if (!api) {
+    showKekaStatus("Open Work Hour Calculator from Chrome's Extensions menu to connect to Keka.");
+    return;
+  }
   try {
-    const { lastKekaClockInFetch } = await chrome.storage.local.get("lastKekaClockInFetch");
+    const { lastKekaClockInFetch } = await api.storage.local.get("lastKekaClockInFetch");
     restoreKekaResult(lastKekaClockInFetch);
     const permissionRequest = { permissions: ["scripting"], origins: ["https://walkover.keka.com/*"] };
-    if (await chrome.permissions.contains(permissionRequest)) {
+    if (await api.permissions.contains(permissionRequest)) {
       await fetchKekaClockIn(false);
     } else if (!kekaFetchResult) {
       showKekaStatus("Connect to Keka to fetch attendance automatically.");
@@ -178,35 +215,52 @@ async function restoreKekaFetch() {
   }
 }
 
-async function fetchKekaClockIn(requestPermission = true) {
+function fetchKekaClockIn(requestPermission = true) {
+  if (kekaFetchPromise) return kekaFetchPromise;
+  kekaFetchPromise = performKekaFetch(requestPermission).finally(() => {
+    kekaFetchPromise = null;
+  });
+  return kekaFetchPromise;
+}
+
+async function performKekaFetch(requestPermission) {
   const button = $("fetchKekaBtn");
   const requestedDate = viewDate;
+  const originalLabel = button.textContent;
   button.disabled = true;
-  showKekaStatus("Connecting to your Keka attendance page…");
+  button.textContent = "Connecting…";
+  showKekaStatus("Opening Keka attendance and reading today's clock-in…");
   try {
+    const api = getExtensionApi();
+    if (!api) {
+      showKekaStatus("Open Work Hour Calculator from Chrome's Extensions menu to connect to Keka.");
+      return;
+    }
     const origin = "https://walkover.keka.com/*";
     const permissionRequest = { permissions: ["scripting"], origins: [origin] };
     const permitted = requestPermission
-      ? await chrome.permissions.request(permissionRequest)
-      : await chrome.permissions.contains(permissionRequest);
+      ? await api.permissions.request(permissionRequest)
+      : await api.permissions.contains(permissionRequest);
     if (!permitted) {
       showKekaStatus("Keka access was not allowed. Grant access to fetch here, or use Custom.");
       return;
     }
-    const result = await chrome.runtime.sendMessage({
+    const result = await withTimeout(api.runtime.sendMessage({
       type: "fetch-keka-clock-in",
       date: requestedDate
-    });
+    }), 45000, "Keka is taking too long to respond. Keep its Attendance Logs page open and try again.");
     if (!result?.ok) {
       restoreKekaResult(result || { date: requestedDate, error: "Could not read the Keka attendance page." });
       return;
     }
     restoreKekaResult(result);
+    if (result.warning) showKekaStatus(result.warning);
   } catch (error) {
     console.error("Could not fetch the Keka clock-in:", error);
-    showKekaStatus("Could not connect to Keka. Open its attendance page and try again.");
+    showKekaStatus(error instanceof Error ? error.message : "Could not connect to Keka. Open its attendance page and try again.");
   } finally {
     button.disabled = false;
+    button.textContent = originalLabel;
   }
 }
 
@@ -286,6 +340,12 @@ function bindEvents() {
     updateDay();
   });
   $("fetchKekaBtn").addEventListener("click", () => fetchKekaClockIn(true));
+  const api = getExtensionApi();
+  api?.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName === "local" && changes.lastKekaClockInFetch) {
+      restoreKekaResult(changes.lastKekaClockInFetch.newValue);
+    }
+  });
 
   document.querySelectorAll("[data-break]").forEach(button => {
     button.addEventListener("click", () => {
