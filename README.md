@@ -96,6 +96,19 @@ Do not open `index.html` directly as a `file://` URL: JavaScript modules and off
 
 The browser version does not provide a Windows tray widget; use the desktop app for that.
 
+## Load the Chrome extension
+
+The Chrome extension opens a compact work tracker from the browser toolbar. Its files are grouped in `chrome-extension/`, separate from the website and Electron desktop app. The popup shows elapsed work, remaining time, and estimated exit at the top, with **View** and **Custom** navigation at the bottom. **View** reads today's clock-in from Keka and shows an 8-hour, no-break estimate; **Custom** keeps the manual shift calculator, targets, breaks, and leave-now projection. Keka data is read-only and is not copied into or used to change Custom records. History browsing, CSV export, and advanced settings are not included in the popup.
+
+1. Open `chrome://extensions` in Chrome.
+2. Turn on **Developer mode**.
+3. Select **Load unpacked** and choose the [`chrome-extension`](./chrome-extension/) folder (the folder containing the extension's `manifest.json`).
+4. Pin **Work Hour Calculator** from Chrome's Extensions menu for quick access.
+
+Reload the extension from `chrome://extensions` after updating its files. Keka access is optional: in **View**, click **Connect / refresh Keka** once and allow Chrome's request to read `walkover.keka.com`. If needed, Keka opens so you can sign in; open the extension again after signing in. Once connected, opening the popup refreshes today's Keka clock-in automatically. The extension reads the visible attendance log, does not store Keka credentials, and does not change Custom data. Its records are stored locally and are separate from the website and Windows desktop app; they do not sync between devices.
+
+The extension folder is self-contained so Chrome can load it independently. Its `js/modules/` folder contains the shared date/time, calculation, and storage modules used by the popup; keep these copies aligned with the corresponding files in the project-level `js/modules/` folder when changing shared behavior.
+
 ## Project structure
 
 ```text
@@ -114,6 +127,17 @@ shiftmate/
 │       ├── breaks.js
 │       ├── history.js
 │       └── theme.js
+├── chrome-extension/
+│   ├── manifest.json
+│   ├── popup.html
+│   ├── popup.css
+│   ├── popup.js
+│   ├── service-worker.js
+│   └── js/
+│       └── modules/
+│           ├── date-time.js
+│           ├── storage.js
+│           └── calculator.js
 ├── desktop/
 │   ├── main.cjs
 │   ├── preload.cjs
@@ -129,6 +153,8 @@ shiftmate/
 - `js/main.js` coordinates the calculator UI, saved daily records, and event handling.
 - `js/modules/calculator.js` contains shift and break calculations.
 - `js/modules/storage.js` saves and normalizes local records.
+- `chrome-extension/` contains the self-contained Manifest V3 extension; load this folder in Chrome's **Load unpacked** picker.
+- The root `manifest.json` is the installable browser site's web app manifest.
 - `desktop/main.cjs` manages the Electron windows, tray, reminders, and local-only app server.
 - `desktop/widget.*` implements the compact desktop widget and its summary display.
 - `desktop/app.ico` is the Windows tray and installer icon.
@@ -144,8 +170,8 @@ shiftmate/
 
 ## Data and limitations
 
-- Records are stored locally in browser storage and do not sync between devices. The desktop app and regular browser version have separate storage.
-- Browser storage can be cleared. Export CSV to keep a backup.
+- Records are stored locally in browser storage and do not sync between devices. The desktop app, regular browser version, and Chrome extension have separate storage.
+- Browser storage can be cleared. The browser app can export CSV; the Chrome popup does not yet include export, so its records have no built-in backup.
 - This is a personal calculator, not an official attendance system. Confirm attendance and company policy separately.
 - GitHub Pages cannot access a private Keka session or API. The Keka link opens its attendance page; clock-out must be confirmed there by the user.
 - The desktop widget displays the saved work summary but does not control Keka or interact with other applications.

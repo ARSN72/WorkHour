@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1220">
+  <title>Work Hour Calculator</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup">
+    <header class="header">
+      <div>
+        <h1>Work Hour Calculator</h1>
+      </div>
+      <time id="liveClock" aria-label="Current local time">--:--:--</time>
+    </header>
+
+    <section class="summary" aria-label="Work summary">
+      <article class="metric">
+        <span>Work elapsed</span>
+        <strong id="elapsedValue">00:00:00</strong>
+        <small id="elapsedHint">Enter a start time</small>
+      </article>
+      <article class="metric">
+        <span>Time remaining</span>
+        <strong id="remainingValue">08:00:00</strong>
+        <small id="remainingHint">Until your target</small>
+      </article>
+      <article class="metric">
+        <span>Estimated exit</span>
+        <strong id="exitValue">—</strong>
+        <small id="exitHint">Enter a start time</small>
+      </article>
+    </section>
+
+    <section id="viewPanel" class="tab-panel" role="tabpanel" aria-labelledby="viewTab" tabindex="0">
+      <article class="panel keka-panel">
+        <div class="keka-clock-in">
+          <span>Clock-in from Keka</span>
+          <strong id="kekaClockInValue">—</strong>
+        </div>
+        <p id="kekaStatus" class="help keka-status" role="status" aria-live="polite">Connect to Keka to fetch attendance automatically.</p>
+        <button id="fetchKekaBtn" class="button secondary keka-button" type="button">Connect / refresh Keka</button>
+        <p class="help">Read-only Keka data. Estimates assume an 8-hour target and no breaks; use Custom for different settings.</p>
+      </article>
+    </section>
+
+    <section id="customPanel" class="tab-panel" role="tabpanel" aria-labelledby="customTab" tabindex="0" hidden>
+    <section class="panel">
+      <div class="section-title">
+        <h2>Work shift</h2>
+        <label class="date-field" for="workDate">Date</label>
+      </div>
+      <input id="workDate" type="date" aria-label="Work date">
+
+      <div class="field-grid">
+        <label class="field">
+          <span>Start time</span>
+          <input id="startTime" type="time" step="60">
+        </label>
+        <label class="field">
+          <span>End time <small>(optional)</small></span>
+          <input id="endTime" type="time" step="60">
+        </label>
+        <label class="field">
+          <span>Work target</span>
+          <select id="targetHours">
+            <option value="8">8 hours</option>
+            <option value="9">9 hours</option>
+            <option value="7.5">7 hours 30 minutes</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Half-day</span>
+          <select id="halfDay">
+            <option value="full">Full day</option>
+            <option value="first">First half</option>
+            <option value="second">Second half</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="customTargetWrap" class="field custom-target hidden">
+        <span>Custom target</span>
+        <div class="custom-target-inputs">
+          <label><input id="customHours" type="number" min="0" max="24" step="1" value="8" aria-label="Target hours"> h</label>
+          <label><input id="customMinutes" type="number" min="0" max="59" step="1" value="0" aria-label="Target minutes"> m</label>
+        </div>
+      </div>
+
+      <div class="progress-label">
+        <span>Shift completion</span>
+        <strong id="progressPercent">0%</strong>
+      </div>
+      <div id="progressBar" class="progress-track" role="progressbar" aria-label="Shift completion" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div id="progressFill"></div>
+      </div>
+
+      <div class="button-row">
+        <button id="startNowBtn" class="button primary" type="button">Start now</button>
+        <button id="endNowBtn" class="button secondary" type="button">End now</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title">
+        <h2>Breaks</h2>
+        <strong id="breakTotal" class="break-total">00:00</strong>
+      </div>
+      <div class="break-presets" aria-label="Add a break">
+        <button class="preset" data-break="10" type="button">+10m</button>
+        <button class="preset" data-break="20" type="button">+20m</button>
+        <button class="preset" data-break="30" type="button">+30m</button>
+        <button class="preset" data-break="60" type="button">+60m</button>
+      </div>
+      <form id="customBreakForm" class="custom-break-form">
+        <label class="sr-only" for="customBreakMinutes">Custom break in minutes</label>
+        <input id="customBreakMinutes" type="number" min="1" max="1440" step="1" placeholder="Minutes" required>
+        <button class="button secondary" type="submit">Add break</button>
+      </form>
+      <ul id="breakList" class="break-list" aria-label="Logged breaks"></ul>
+      <p class="help">Breaks are excluded from your work target and extend your estimated exit time.</p>
+    </section>
+
+    <section class="leave-card" aria-live="polite">
+      <div>
+        <p class="eyebrow">QUICK ANSWER</p>
+        <h2 id="leaveNowTitle">If you leave now</h2>
+        <p id="leaveNowMessage">Enter a start time to see your projection.</p>
+      </div>
+      <strong id="leaveNowDelta">8h 00m short</strong>
+    </section>
+    <p id="notice" class="notice" role="status" aria-live="polite"></p>
+    </section>
+    <footer class="popup-footer">
+      <span class="footer-credit">Made with <svg class="heart-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"/></svg> by AR$N</span>
+      <a class="linkedin-link" href="https://linkedin.com/in/arshanmansuri" target="_blank" rel="noopener noreferrer" aria-label="AR$N on LinkedIn">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.9 8.6A1.9 1.9 0 1 1 6.9 4.8a1.9 1.9 0 0 1 0 3.8ZM5.1 9.9h3.6v9.6H5.1V9.9Zm5.8 0h3.5v1.3h.1c.5-.9 1.7-1.9 3.5-1.9 3.7 0 4.4 2.4 4.4 5.5v5.7h-3.6v-5.3c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.4H10.9V9.9Z"/></svg>
+      </a>
+      <a class="website-link" href="https://ionxtech.com" target="_blank" rel="noopener noreferrer">ionXtech</a>
+    </footer>
+    <nav class="tab-navigation" role="tablist" aria-label="Calculator mode">
+      <button id="viewTab" class="tab-button active" type="button" role="tab" aria-selected="true" aria-controls="viewPanel" tabindex="0">View</button>
+      <button id="customTab" class="tab-button" type="button" role="tab" aria-selected="false" aria-controls="customPanel" tabindex="-1">Custom</button>
+    </nav>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
